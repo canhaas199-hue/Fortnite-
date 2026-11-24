@@ -1,0 +1,2300 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TOP SECRET // Schatten vs. Geist — Top-Down Prototyp</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+    :root {
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #090d16;
+      color: #f8fafc;
+      font-family: var(--font-sans);
+    }
+
+    /* Canvas füllt den gesamten verfügbaren Viewport und passt sich dynamisch an */
+    #gameCanvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+      background-color: #111827;
+    }
+
+    /* Dezente Scrollbars für Modals/Shops auf kleineren Screens */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <!-- Haupt-Spiel canvas -->
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- ===================================================================== -->
+  <!-- HUD OVERLAY (Lebenspunkte, Schilde, Munition, POI, Alarm, Aktionen)   -->
+  <!-- ===================================================================== -->
+  <div id="hudRoot" class="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-3 sm:p-5">
+    <!-- Obere Leiste: Aktuelle POI/Zone, Alarm/Fraktion, Spind & Item-Shop Buttons -->
+    <div class="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
+      <!-- Links: Aktuelle Zone & Tarnstatus -->
+      <div class="pointer-events-auto flex flex-col gap-2">
+        <div class="rounded-2xl border border-slate-700/80 bg-slate-950/85 px-3.5 py-2.5 shadow-xl backdrop-blur-md">
+          <div class="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            <span id="zoneDot" class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+            <span>Aktuelle Zone (POI)</span>
+          </div>
+          <div id="hudZoneName" class="text-base sm:text-lg font-extrabold tracking-tight text-white">
+            Die Agentur
+          </div>
+          <div id="hudZoneSub" class="text-xs text-slate-400">
+            Zentrales Spionage-Hauptquartier
+          </div>
+        </div>
+
+        <!-- Tarnstatus-Badge (Telefonzelle / Mülltonne) -->
+        <div id="hudStealthBadge" class="hidden rounded-xl border border-cyan-400/50 bg-cyan-950/85 px-3 py-1.5 text-xs font-semibold text-cyan-200 shadow-lg backdrop-blur-md">
+          TARNUNG AKTIV — Versteckt (E zum Verlassen)
+        </div>
+        <div id="hudWaterBadge" class="hidden rounded-xl border border-sky-400/40 bg-sky-950/80 px-3 py-1.5 text-xs font-semibold text-sky-200 shadow-lg backdrop-blur-md">
+          IM WASSER — Bewegung verlangsamt
+        </div>
+      </div>
+
+      <!-- Mitte: Sicherheits- / Alarmstufe (Schatten vs. Geist) -->
+      <div class="rounded-2xl border border-slate-700/80 bg-slate-950/85 px-4 py-2.5 shadow-xl backdrop-blur-md min-w-[210px] sm:min-w-[260px]">
+        <div class="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
+          <span class="text-slate-300">Sicherheits-Alarm</span>
+          <span id="hudAlarmPercent" class="text-emerald-400">0%</span>
+        </div>
+        <div class="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-slate-800 p-0.5">
+          <div id="hudAlarmBar" class="h-full w-0 rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 transition-all duration-200"></div>
+        </div>
+        <div class="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
+          <span>Fraktionen: <strong class="text-slate-200">Schatten</strong> &amp; <strong class="text-sky-300">Geist</strong></span>
+          <span id="hudEnemiesLeft" class="font-semibold text-amber-300">Wachen: 0</span>
+        </div>
+      </div>
+
+      <!-- Rechts: Schnellaktionen (Spind, Item-Shop, Pause, Neustart) -->
+      <div class="pointer-events-auto flex flex-wrap items-center gap-2">
+        <button id="btnOpenLocker" type="button" class="rounded-xl border border-slate-600/80 bg-slate-900/90 px-3 py-2 text-xs sm:text-sm font-bold text-white shadow-lg transition hover:border-amber-400 hover:bg-slate-800 active:scale-95">
+          Spind
+        </button>
+        <button id="btnOpenShop" type="button" class="rounded-xl border border-amber-400/70 bg-gradient-to-r from-amber-500/90 to-orange-600/90 px-3 py-2 text-xs sm:text-sm font-extrabold text-slate-950 shadow-lg transition hover:brightness-110 active:scale-95">
+          Item-Shop
+        </button>
+        <button id="btnTogglePause" type="button" class="rounded-xl border border-slate-700/80 bg-slate-900/90 px-3 py-2 text-xs sm:text-sm font-semibold text-slate-200 shadow-lg transition hover:bg-slate-800 active:scale-95">
+          Pause
+        </button>
+        <button id="btnRestartGame" type="button" class="rounded-xl border border-rose-500/50 bg-rose-950/75 px-3 py-2 text-xs sm:text-sm font-semibold text-rose-200 shadow-lg transition hover:bg-rose-900/80 active:scale-95">
+          Neustart
+        </button>
+      </div>
+    </div>
+
+    <!-- Kurze Toast-/Event-Nachricht (ersetzt alert()/confirm() komplett) -->
+    <div id="toastBanner" class="mx-auto hidden rounded-2xl border border-amber-400/50 bg-slate-950/90 px-4 py-2 text-xs sm:text-sm font-semibold text-amber-200 shadow-2xl backdrop-blur-md">
+      Hinweis
+    </div>
+
+    <!-- Untere Leiste: Lebenspunkte/Schilde, Waffen-Hotbar & Aktions-Buttons -->
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+      <!-- Links unten: Schilde, Lebenspunkte & Material -->
+      <div class="pointer-events-auto rounded-2xl border border-slate-700/80 bg-slate-950/85 p-3 sm:p-4 shadow-xl backdrop-blur-md w-full sm:w-80">
+        <!-- Schild -->
+        <div class="mb-2">
+          <div class="flex items-center justify-between text-xs font-bold">
+            <span class="text-sky-300 uppercase tracking-wider">Schilde</span>
+            <span id="hudShieldText" class="text-sky-200">50 / 100</span>
+          </div>
+          <div class="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-800/90 p-0.5">
+            <div id="hudShieldBar" class="h-full w-1/2 rounded-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-150"></div>
+          </div>
+        </div>
+
+        <!-- Lebenspunkte (HP) -->
+        <div class="mb-3">
+          <div class="flex items-center justify-between text-xs font-bold">
+            <span class="text-emerald-300 uppercase tracking-wider">Lebenspunkte</span>
+            <span id="hudHpText" class="text-emerald-200">100 / 100</span>
+          </div>
+          <div class="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-800/90 p-0.5">
+            <div id="hudHpBar" class="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-150"></div>
+          </div>
+        </div>
+
+        <!-- Ressourcen & Schnell-Heilung / Bauen -->
+        <div class="flex items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-xs">
+          <div class="font-semibold text-slate-300">
+            Material: <span id="hudMats" class="font-extrabold text-amber-300">120</span>
+            <span class="ml-2 text-slate-400">Tränke: <span id="hudPotions" class="font-bold text-sky-300">2</span></span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="btnHealShield" type="button" title="Schild aufladen (Taste H)" class="rounded-lg border border-sky-400/50 bg-sky-950/80 px-2.5 py-1 text-[11px] font-bold text-sky-200 transition hover:bg-sky-900 active:scale-95">
+              Schild [H]
+            </button>
+            <button id="btnBuildCover" type="button" title="Deckung bauen (Taste B)" class="rounded-lg border border-amber-400/50 bg-amber-950/80 px-2.5 py-1 text-[11px] font-bold text-amber-200 transition hover:bg-amber-900 active:scale-95">
+              Deckung [B]
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mitte unten: Waffen-Slots (1-5) & Magazin/Munition -->
+      <div class="pointer-events-auto flex flex-col items-center gap-2">
+        <div id="weaponSlotsContainer" class="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/85 p-2 shadow-xl backdrop-blur-md">
+          <!-- Dynamisch per JS gerendert -->
+        </div>
+
+        <div class="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/85 px-4 py-1.5 text-xs shadow-lg backdrop-blur-md">
+          <span id="hudWeaponName" class="font-extrabold text-white">Sturmgewehr</span>
+          <span class="text-slate-600">|</span>
+          <span class="font-mono text-sm font-bold text-amber-300">
+            <span id="hudAmmoMag">30</span> <span class="text-slate-500">/</span> <span id="hudAmmoReserve" class="text-slate-300">120</span>
+          </span>
+          <span id="hudReloadStatus" class="hidden font-bold text-rose-400 animate-pulse">LÄDT NACH...</span>
+        </div>
+      </div>
+
+      <!-- Rechts unten: Kompakte Steuerungslegende -->
+      <div class="hidden xl:block rounded-2xl border border-slate-700/70 bg-slate-950/80 px-3.5 py-2.5 text-[11px] text-slate-300 shadow-xl backdrop-blur-md">
+        <div class="font-bold uppercase tracking-wider text-slate-400 mb-1">Steuerung</div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-0.5">
+          <span><strong class="text-white">WASD</strong> Bewegen</span>
+          <span><strong class="text-white">Maus</strong> Zielen &amp; Feuern</span>
+          <span><strong class="text-white">E</strong> Interagieren / Tarnen</span>
+          <span><strong class="text-white">R</strong> Nachladen</span>
+          <span><strong class="text-white">B</strong> Deckung bauen (20 Mat)</span>
+          <span><strong class="text-white">H</strong> Schild-Trank nutzen</span>
+          <span><strong class="text-white">1–5</strong> Waffe wechseln</span>
+          <span><strong class="text-white">LMB / Q</strong> Action</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: SPIND (LOCKER — Outfit, Rücken-Accessoire, Hängegleiter)       -->
+  <!-- ===================================================================== -->
+  <div id="lockerModal" class="fixed inset-0 z-30 hidden items-center justify-center bg-slate-950/80 p-3 sm:p-6 backdrop-blur-sm">
+    <div class="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 class="text-lg sm:text-xl font-black tracking-tight text-white">SPIND — AUSRÜSTUNGS-KONZEPT</h2>
+          <p class="text-xs text-slate-400">Eigene Agenten-Outfits, Rücken-Accessoires &amp; Gleiter (Schatten vs. Geist Konzept)</p>
+        </div>
+        <button data-close-modal="lockerModal" type="button" class="rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700">
+          Schließen
+        </button>
+      </div>
+
+      <div class="grid flex-1 grid-cols-1 md:grid-cols-12 gap-4 overflow-y-auto custom-scroll p-5">
+        <!-- Linke Vorschau mit Live-Canvas -->
+        <div class="md:col-span-5 flex flex-col items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-400">Agenten-Vorschau</div>
+          <canvas id="lockerPreviewCanvas" width="240" height="240" class="my-2 rounded-2xl border border-slate-800 bg-slate-900"></canvas>
+          <div id="lockerEquippedSummary" class="w-full space-y-1 text-center text-xs">
+            <!-- Per JS gefüllt -->
+          </div>
+        </div>
+
+        <!-- Rechte Auswahl -->
+        <div class="md:col-span-7 space-y-5">
+          <div>
+            <h3 class="mb-2 text-xs font-extrabold uppercase tracking-wider text-amber-400">Outfits</h3>
+            <div id="lockerOutfitsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+          </div>
+          <div>
+            <h3 class="mb-2 text-xs font-extrabold uppercase tracking-wider text-sky-400">Rücken-Accessoires</h3>
+            <div id="lockerBackblingsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+          </div>
+          <div>
+            <h3 class="mb-2 text-xs font-extrabold uppercase tracking-wider text-emerald-400">Hängegleiter (Konzept)</h3>
+            <div id="lockerGlidersGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: SIMULIERTER ITEM-SHOP (Rotation, Rarity, Vorschau & Kauf)      -->
+  <!-- ===================================================================== -->
+  <div id="shopModal" class="fixed inset-0 z-30 hidden items-center justify-center bg-slate-950/80 p-3 sm:p-6 backdrop-blur-sm">
+    <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-amber-500/40 bg-slate-900 shadow-2xl">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <h2 class="text-lg sm:text-xl font-black tracking-tight text-white">GEHEIMDIENST ITEM-SHOP</h2>
+            <span id="shopRotationTag" class="rounded-full bg-amber-500/20 border border-amber-400/40 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
+              Rotation #1
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">Fiktives Kosmetik-Konzept ohne geschützte Original-Assets — Guthaben durch Gefechte &amp; Kisten</p>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <div class="rounded-xl border border-amber-400/40 bg-amber-950/50 px-3 py-1.5 text-xs font-extrabold text-amber-300">
+            Intel-Marken: <span id="shopCreditsValue">500</span>
+          </div>
+          <button id="btnRotateShop" type="button" class="rounded-xl border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700">
+            Rotation wechseln
+          </button>
+          <button data-close-modal="shopModal" type="button" class="rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700">
+            Schließen
+          </button>
+        </div>
+      </div>
+
+      <div class="grid flex-1 grid-cols-1 lg:grid-cols-12 gap-4 overflow-y-auto custom-scroll p-5">
+        <!-- Linke Live-Drehvorschau -->
+        <div class="lg:col-span-4 flex flex-col items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/75 p-4">
+          <div class="flex w-full items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">360° Vorschau</span>
+            <button id="btnToggleShopSpin" type="button" class="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700">
+              Rotation An/Aus
+            </button>
+          </div>
+          <canvas id="shopPreviewCanvas" width="230" height="230" class="my-3 rounded-2xl border border-slate-800 bg-slate-900"></canvas>
+          <div id="shopSelectedDetails" class="w-full rounded-xl border border-slate-800 bg-slate-900/90 p-3 text-center">
+            <div id="shopPreviewTitle" class="text-sm font-extrabold text-white">Nachtschatten-Agent</div>
+            <div id="shopPreviewDesc" class="mt-0.5 text-xs text-slate-400">Mattschwarzer Infiltrationsanzug der Fraktion Schatten.</div>
+          </div>
+        </div>
+
+        <!-- Rechte Shop-Karten -->
+        <div class="lg:col-span-8">
+          <h3 class="mb-3 text-xs font-extrabold uppercase tracking-wider text-amber-400">Aktuelle Angebote</h3>
+          <div id="shopItemsGrid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- PAUSE / GAME-OVER OVERLAY                                             -->
+  <!-- ===================================================================== -->
+  <div id="statusOverlay" class="fixed inset-0 z-20 hidden items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+      <div id="overlayBadge" class="mx-auto mb-2 inline-block rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-300">
+        Einsatz pausiert
+      </div>
+      <h2 id="overlayTitle" class="text-2xl font-black text-white">Spiel pausiert</h2>
+      <p id="overlayMessage" class="mt-2 text-sm text-slate-300">
+        Setze den Einsatz fort oder starte eine neue Runde auf der Top-Secret-Insel.
+      </p>
+      <div class="mt-6 flex items-center justify-center gap-3">
+        <button id="btnResumeGame" type="button" class="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-extrabold text-slate-950 shadow-lg transition hover:bg-emerald-400">
+          Weiter spielen
+        </button>
+        <button id="btnOverlayRestart" type="button" class="rounded-xl border border-slate-600 bg-slate-800 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-slate-700">
+          Neu starten
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODULARES JAVASCRIPT (Strukturiert in logische Module & Klassen)      -->
+  <!-- ===================================================================== -->
+  <script>
+    /**
+     * MODUL 1: WAFFEN-KONFIGURATIONEN & WAFFEN-KLASSE
+     * Enthält alle Waffentypen inklusive Schaden, Feuerrate, Nachladezeit,
+     * Magazingröße, Streuung und Mythic-Status.
+     */
+    const WEAPON_CATALOG = {
+      assault_rifle: {
+        id: 'assault_rifle',
+        slot: 1,
+        name: 'Sturmgewehr',
+        shortName: 'AR',
+        rarity: 'Selten',
+        color: '#38bdf8',
+        damage: 24,
+        fireRate: 0.16, // Sekunden zwischen Schüssen
+        reloadTime: 1.35,
+        magSize: 30,
+        reserveAmmo: 150,
+        pellets: 1,
+        spread: 0.055,
+        bulletSpeed: 920,
+        range: 760,
+        isMythic: false
+      },
+      shotgun: {
+        id: 'shotgun',
+        slot: 2,
+        name: 'Taktik-Schrotflinte',
+        shortName: 'SG',
+        rarity: 'Episch',
+        color: '#c084fc',
+        damage: 14, // x Pellets
+        fireRate: 0.68,
+        reloadTime: 1.5,
+        magSize: 8,
+        reserveAmmo: 48,
+        pellets: 6,
+        spread: 0.24,
+        bulletSpeed: 760,
+        range: 360,
+        isMythic: false
+      },
+      smg: {
+        id: 'smg',
+        slot: 3,
+        name: 'Maschinenpistole',
+        shortName: 'MP',
+        rarity: 'Ungewöhnlich',
+        color: '#4ade80',
+        damage: 14,
+        fireRate: 0.085,
+        reloadTime: 1.05,
+        magSize: 35,
+        reserveAmmo: 210,
+        pellets: 1,
+        spread: 0.11,
+        bulletSpeed: 840,
+        range: 520,
+        isMythic: false
+      },
+      sniper: {
+        id: 'sniper',
+        slot: 4,
+        name: 'Scharfschützengewehr',
+        shortName: 'SNP',
+        rarity: 'Legendär',
+        color: '#fbbf24',
+        damage: 88,
+        fireRate: 1.15,
+        reloadTime: 1.9,
+        magSize: 4,
+        reserveAmmo: 24,
+        pellets: 1,
+        spread: 0.008,
+        bulletSpeed: 1450,
+        range: 1200,
+        isMythic: false
+      },
+      mythic_drum: {
+        id: 'mythic_drum',
+        slot: 5,
+        name: 'Mythisches Trommelgewehr',
+        shortName: 'MYTH',
+        rarity: 'Mythisch',
+        color: '#f59e0b',
+        damage: 27,
+        fireRate: 0.11,
+        reloadTime: 1.45,
+        magSize: 50,
+        reserveAmmo: 250,
+        pellets: 1,
+        spread: 0.075,
+        bulletSpeed: 960,
+        range: 720,
+        isMythic: true
+      }
+    };
+
+    class WeaponInstance {
+      constructor(config) {
+        this.config = config;
+        this.mag = config.magSize;
+        this.reserve = config.reserveAmmo;
+        this.cooldown = 0;
+        this.isReloading = false;
+        this.reloadTimer = 0;
+      }
+
+      get canFire() {
+        return !this.isReloading && this.cooldown <= 0 && this.mag > 0;
+      }
+
+      startReload() {
+        if (this.isReloading || this.mag >= this.config.magSize || this.reserve <= 0) {
+          return false;
+        }
+        this.isReloading = true;
+        this.reloadTimer = this.config.reloadTime;
+        return true;
+      }
+
+      update(dt) {
+        if (this.cooldown > 0) {
+          this.cooldown = Math.max(0, this.cooldown - dt);
+        }
+        if (this.isReloading) {
+          this.reloadTimer -= dt;
+          if (this.reloadTimer <= 0) {
+            const needed = this.config.magSize - this.mag;
+            const loadCount = Math.min(needed, this.reserve);
+            this.mag += loadCount;
+            this.reserve -= loadCount;
+            this.isReloading = false;
+            this.reloadTimer = 0;
+          }
+        }
+      }
+
+      addAmmo(amount) {
+        this.reserve += amount;
+      }
+    }
+
+    /**
+     * MODUL 2: KOSMETIK-, SPIND- & ITEM-SHOP-SYSTEM (Fiktives Konzept)
+     * Verwaltet Outfits, Rücken-Accessoires, Hängegleiter, Rotation und Vorschau.
+     */
+    const COSMETIC_CATALOG = {
+      outfits: [
+        {
+          id: 'outfit_shadow_ops',
+          type: 'outfit',
+          name: 'Nachtschatten-Agent',
+          faction: 'Schatten',
+          rarity: 'Episch',
+          price: 0,
+          owned: true,
+          primaryColor: '#1e293b',
+          accentColor: '#f43f5e',
+          visorColor: '#fb7185',
+          desc: 'Taktischer Infiltrationsanzug mit rotem Visier.'
+        },
+        {
+          id: 'outfit_ghost_agent',
+          type: 'outfit',
+          name: 'Geist-Spezialist',
+          faction: 'Geist',
+          rarity: 'Episch',
+          price: 250,
+          owned: false,
+          primaryColor: '#f1f5f9',
+          accentColor: '#0ea5e9',
+          visorColor: '#38bdf8',
+          desc: 'Heller Aufklärungsanzug mit cyanfarbenem Sensor.'
+        },
+        {
+          id: 'outfit_gold_director',
+          type: 'outfit',
+          name: 'Tresor-Direktor',
+          faction: 'Neutral',
+          rarity: 'Mythisch',
+          price: 600,
+          owned: false,
+          primaryColor: '#0f172a',
+          accentColor: '#f59e0b',
+          visorColor: '#fde047',
+          desc: 'Exklusiver Einsatzanzug mit vergoldeten Schulterplatten.'
+        },
+        {
+          id: 'outfit_grotto_recon',
+          type: 'outfit',
+          name: 'Grotto-Späher',
+          faction: 'Schatten',
+          rarity: 'Selten',
+          price: 180,
+          owned: false,
+          primaryColor: '#1e3a3a',
+          accentColor: '#10b981',
+          visorColor: '#34d399',
+          desc: 'Feuchtigkeitsresistenter Anzug für Höhlen & Wasserwege.'
+        }
+      ],
+      backblings: [
+        {
+          id: 'bb_none',
+          type: 'backbling',
+          name: 'Kein Rucksack',
+          rarity: 'Standard',
+          price: 0,
+          owned: true,
+          color: '#475569',
+          shape: 'none',
+          desc: 'Leichtgewicht ohne Rückenmodul.'
+        },
+        {
+          id: 'bb_cipher_pack',
+          type: 'backbling',
+          name: 'Chiffre-Funkmodul',
+          rarity: 'Selten',
+          price: 150,
+          owned: false,
+          color: '#f43f5e',
+          shape: 'antenna',
+          desc: 'Kompaktes Relais-Paket mit Signal-Antenne.'
+        },
+        {
+          id: 'bb_cryo_core',
+          type: 'backbling',
+          name: 'Geist-Kernzelle',
+          rarity: 'Episch',
+          price: 280,
+          owned: false,
+          color: '#38bdf8',
+          shape: 'core',
+          desc: 'Leuchtende Energie-Zelle im Rückenrahmen.'
+        },
+        {
+          id: 'bb_gold_bar_case',
+          type: 'backbling',
+          name: 'Goldbarren-Koffer',
+          rarity: 'Legendär',
+          price: 420,
+          owned: false,
+          color: '#eab308',
+          shape: 'case',
+          desc: 'Gepanzerter Aktenkoffer voller Einsatz-Gold.'
+        }
+      ],
+      gliders: [
+        {
+          id: 'glider_stealth_wing',
+          type: 'glider',
+          name: 'Tarn-Gleiter',
+          rarity: 'Selten',
+          price: 0,
+          owned: true,
+          wingColor: '#334155',
+          trimColor: '#f43f5e',
+          desc: 'Leiser Gleitschirm für verdeckte Landungen.'
+        },
+        {
+          id: 'glider_sky_vanguard',
+          type: 'glider',
+          name: 'Geist-Schwinge',
+          rarity: 'Episch',
+          price: 300,
+          owned: false,
+          wingColor: '#e2e8f0',
+          trimColor: '#0284c7',
+          desc: 'Aerodynamischer Gleiter im Geist-Design.'
+        },
+        {
+          id: 'glider_sovereign_arc',
+          type: 'glider',
+          name: 'Direktor-Bogen',
+          rarity: 'Legendär',
+          price: 450,
+          owned: false,
+          wingColor: '#1e293b',
+          trimColor: '#f59e0b',
+          desc: 'Goldverzierter Gleiter für Spitzenagenten.'
+        }
+      ]
+    };
+
+    class CosmeticManager {
+      constructor() {
+        this.credits = 500;
+        this.equipped = {
+          outfitId: 'outfit_shadow_ops',
+          backblingId: 'bb_cipher_pack',
+          gliderId: 'glider_stealth_wing'
+        };
+        this.rotationIndex = 0;
+        this.previewItem = COSMETIC_CATALOG.outfits[0];
+        this.spinEnabled = true;
+        this.previewAngle = 0;
+      }
+
+      getAllItems() {
+        return [
+          ...COSMETIC_CATALOG.outfits,
+          ...COSMETIC_CATALOG.backblings,
+          ...COSMETIC_CATALOG.gliders
+        ];
+      }
+
+      getItemById(id) {
+        return this.getAllItems().find((item) => item.id === id) || null;
+      }
+
+      getEquippedOutfit() {
+        return this.getItemById(this.equipped.outfitId) || COSMETIC_CATALOG.outfits[0];
+      }
+
+      getEquippedBackbling() {
+        return this.getItemById(this.equipped.backblingId) || COSMETIC_CATALOG.backblings[0];
+      }
+
+      getEquippedGlider() {
+        return this.getItemById(this.equipped.gliderId) || COSMETIC_CATALOG.gliders[0];
+      }
+
+      equipItem(itemId) {
+        const item = this.getItemById(itemId);
+        if (!item || !item.owned) return false;
+        if (item.type === 'outfit') this.equipped.outfitId = item.id;
+        if (item.type === 'backbling') this.equipped.backblingId = item.id;
+        if (item.type === 'glider') this.equipped.gliderId = item.id;
+        return true;
+      }
+
+      buyItem(itemId) {
+        const item = this.getItemById(itemId);
+        if (!item) return { ok: false, msg: 'Artikel nicht gefunden.' };
+        if (item.owned) {
+          this.equipItem(itemId);
+          return { ok: true, msg: `${item.name} ausgerüstet.` };
+        }
+        if (this.credits < item.price) {
+          return { ok: false, msg: `Nicht genug Intel-Marken (${item.price} benötigt).` };
+        }
+        this.credits -= item.price;
+        item.owned = true;
+        this.equipItem(itemId);
+        return { ok: true, msg: `${item.name} gekauft & ausgerüstet!` };
+      }
+
+      getShopFeaturedList() {
+        const pool = this.getAllItems().filter((i) => i.price > 0);
+        const total = pool.length;
+        const featured = [];
+        for (let i = 0; i < Math.min(6, total); i++) {
+          featured.push(pool[(this.rotationIndex * 2 + i) % total]);
+        }
+        return featured;
+      }
+
+      rotateShop() {
+        this.rotationIndex += 1;
+        const list = this.getShopFeaturedList();
+        if (list.length > 0) {
+          this.previewItem = list[0];
+        }
+      }
+
+      // Zeichnet eine stilisierte Top-Down / 3/4-Vorschau eines Kosmetik-Objekts auf ein Mini-Canvas
+      drawCosmeticPreview(ctx, width, height, item, angle) {
+        ctx.clearRect(0, 0, width, height);
+
+        // Hintergrund-Raster
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= width; x += 24) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= height; y += 24) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+
+        const cx = width / 2;
+        const cy = height / 2 + 8;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+
+        // Boden-Podest
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+        ctx.beginPath();
+        ctx.ellipse(0, 26, 56, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        const target = item || this.getEquippedOutfit();
+        const sway = Math.sin(angle * 2) * 3;
+
+        if (target.type === 'glider') {
+          ctx.rotate(Math.sin(angle) * 0.12);
+          ctx.fillStyle = target.wingColor || '#334155';
+          ctx.strokeStyle = target.trimColor || '#f43f5e';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(-78, -6);
+          ctx.quadraticCurveTo(0, -34, 78, -6);
+          ctx.quadraticCurveTo(0, 8, -78, -6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // Gleiter-Strebe
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(0, -14);
+          ctx.lineTo(0, 24);
+          ctx.stroke();
+        } else if (target.type === 'backbling') {
+          ctx.translate(0, sway);
+          ctx.fillStyle = target.color || '#64748b';
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(-24, -22, 48, 44, 10);
+          ctx.fill();
+          ctx.stroke();
+
+          if (target.shape === 'antenna') {
+            ctx.strokeStyle = '#f8fafc';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(14, -22);
+            ctx.lineTo(24, -46);
+            ctx.stroke();
+            ctx.fillStyle = '#fb7185';
+            ctx.beginPath();
+            ctx.arc(24, -48, 5, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (target.shape === 'core') {
+            ctx.fillStyle = '#e0f2fe';
+            ctx.beginPath();
+            ctx.arc(0, 0, 11, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (target.shape === 'case') {
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(-14, -10, 28, 20);
+          }
+        } else {
+          // Outfit-Figur (stilisierte Top-Down/Front-Kombination)
+          const outfit = target;
+          const bb = this.getEquippedBackbling();
+          ctx.translate(0, sway);
+
+          // Rücken-Accessoire leicht versetzt sichtbar
+          if (bb && bb.shape !== 'none') {
+            ctx.fillStyle = bb.color;
+            ctx.beginPath();
+            ctx.roundRect(-16, -24, 32, 14, 5);
+            ctx.fill();
+          }
+
+          // Schultern / Torso
+          ctx.fillStyle = outfit.primaryColor;
+          ctx.strokeStyle = outfit.accentColor;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(-24, -14, 48, 34, 12);
+          ctx.fill();
+          ctx.stroke();
+
+          // Kopf + Visier
+          ctx.fillStyle = outfit.primaryColor;
+          ctx.beginPath();
+          ctx.arc(0, -24, 15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          const visorShift = Math.cos(angle) * 5;
+          ctx.fillStyle = outfit.visorColor;
+          ctx.beginPath();
+          ctx.roundRect(-10 + visorShift, -28, 20, 7, 3);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    /**
+     * MODUL 3: KARTE, POIs, WASSER, DECKUNG & TARN-OBJEKTE (Chapter 2 Season 2 inspiriert)
+     * Enthält die 5 Hauptzonen ("Die Agentur", "Das Grotto", "Das Rig", "Die Jacht", "Das Versteck"),
+     * Schwimm-/Wasserflächen, Wand-/Deckungshindernisse, Telefonzellen, Mülltonnen und Beutekisten.
+     */
+    class WorldMap {
+      constructor(width = 2600, height = 2000) {
+        this.width = width;
+        this.height = height;
+
+        // 5 abstrahierte POIs inspiriert von Chapter 2 Season 2
+        this.pois = [
+          {
+            id: 'agency',
+            name: 'Die Agentur',
+            subtitle: 'Zentrales Spionage-Hauptquartier',
+            x: 1300,
+            y: 1000,
+            radius: 360,
+            floorColor: '#1e293b',
+            accentColor: '#38bdf8',
+            faction: 'Geist'
+          },
+          {
+            id: 'grotto',
+            name: 'Das Grotto',
+            subtitle: 'Unterirdische Felshöhle & Werft',
+            x: 520,
+            y: 1520,
+            radius: 350,
+            floorColor: '#17252a',
+            accentColor: '#10b981',
+            faction: 'Schatten'
+          },
+          {
+            id: 'rig',
+            name: 'Das Rig',
+            subtitle: 'Industrielle Bohrplattform',
+            x: 560,
+            y: 480,
+            radius: 350,
+            floorColor: '#29221d',
+            accentColor: '#f97316',
+            faction: 'Schatten'
+          },
+          {
+            id: 'yacht',
+            name: 'Die Jacht',
+            subtitle: 'Luxus-Hafen & Deck-Anleger',
+            x: 2060,
+            y: 520,
+            radius: 340,
+            floorColor: '#1b2838',
+            accentColor: '#e2e8f0',
+            faction: 'Geist'
+          },
+          {
+            id: 'hideout',
+            name: 'Das Versteck',
+            subtitle: 'Geheimer Außenposten im Süden',
+            x: 2040,
+            y: 1520,
+            radius: 330,
+            floorColor: '#231c2e',
+            accentColor: '#c084fc',
+            faction: 'Schatten'
+          }
+        ];
+
+        // Wasserflächen (verlangsamen Bewegung und ermöglichen Schwimm-Logik)
+        this.waterZones = [
+          { x: 860, y: 180, width: 420, height: 420, name: 'Nord-Kanal' },
+          { x: 1560, y: 240, width: 360, height: 520, name: 'Jacht-Bucht' },
+          { x: 180, y: 900, width: 340, height: 420, name: 'Grotto-Rinne' },
+          { x: 1450, y: 1420, width: 420, height: 380, name: 'Süd-Lagune' }
+        ];
+
+        // Feste Deckungs- / Gebäudehindernisse (AABB)
+        this.obstacles = [
+          // Um Die Agentur
+          { x: 1150, y: 840, width: 90, height: 28, type: 'wall', color: '#475569' },
+          { x: 1360, y: 840, width: 90, height: 28, type: 'wall', color: '#475569' },
+          { x: 1150, y: 1130, width: 90, height: 28, type: 'wall', color: '#475569' },
+          { x: 1360, y: 1130, width: 90, height: 28, type: 'wall', color: '#475569' },
+          { x: 1270, y: 970, width: 60, height: 60, type: 'pillar', color: '#0284c7' },
+
+          // Um Das Rig
+          { x: 420, y: 360, width: 110, height: 30, type: 'crate', color: '#ea580c' },
+          { x: 630, y: 540, width: 95, height: 34, type: 'crate', color: '#ea580c' },
+
+          // Um Das Grotto
+          { x: 390, y: 1420, width: 100, height: 32, type: 'rock', color: '#0f766e' },
+          { x: 610, y: 1620, width: 110, height: 32, type: 'rock', color: '#0f766e' },
+
+          // Um Die Jacht
+          { x: 1960, y: 420, width: 120, height: 26, type: 'deck', color: '#cbd5e1' },
+          { x: 2010, y: 620, width: 110, height: 26, type: 'deck', color: '#cbd5e1' },
+
+          // Um Das Versteck
+          { x: 1920, y: 1420, width: 105, height: 30, type: 'wall', color: '#7e22ce' },
+          { x: 2110, y: 1600, width: 105, height: 30, type: 'wall', color: '#7e22ce' }
+        ];
+
+        // Vom Spieler errichtete temporäre Deckungen
+        this.playerStructures = [];
+
+        // Tarn-/Versteckmöglichkeiten: Telefonzellen und Mülltonnen
+        this.hidingSpots = [
+          { id: 'booth_1', kind: 'Telefonzelle', x: 1295, y: 790, width: 34, height: 34, color: '#38bdf8' },
+          { id: 'booth_2', kind: 'Telefonzelle', x: 2055, y: 475, width: 34, height: 34, color: '#38bdf8' },
+          { id: 'bin_1', kind: 'Mülltonne', x: 545, y: 420, width: 36, height: 36, color: '#22c55e' },
+          { id: 'bin_2', kind: 'Mülltonne', x: 515, y: 1470, width: 36, height: 36, color: '#22c55e' },
+          { id: 'bin_3', kind: 'Mülltonne', x: 2035, y: 1470, width: 36, height: 36, color: '#22c55e' }
+        ];
+
+        this.resetLootChests();
+      }
+
+      resetLootChests() {
+        const coords = [
+          { x: 1300, y: 915, tier: 'mythic' },
+          { x: 1210, y: 1000, tier: 'rare' },
+          { x: 1390, y: 1000, tier: 'rare' },
+          { x: 560, y: 465, tier: 'rare' },
+          { x: 520, y: 1550, tier: 'rare' },
+          { x: 2060, y: 520, tier: 'rare' },
+          { x: 2040, y: 1540, tier: 'rare' },
+          { x: 1060, y: 700, tier: 'common' },
+          { x: 1680, y: 1180, tier: 'common' }
+        ];
+
+        this.lootChests = coords.map((c, idx) => ({
+          id: `chest_${idx}`,
+          x: c.x,
+          y: c.y,
+          size: 28,
+          tier: c.tier,
+          opened: false
+        }));
+      }
+
+      getPoiAt(x, y) {
+        for (const poi of this.pois) {
+          const dist = Math.hypot(x - poi.x, y - poi.y);
+          if (dist <= poi.radius) {
+            return poi;
+          }
+        }
+        return {
+          id: 'wilderness',
+          name: 'Offene Insel',
+          subtitle: 'Verbindungsroute zwischen den Einsatzorten',
+          x,
+          y,
+          radius: 0,
+          floorColor: '#14261d',
+          accentColor: '#4ade80',
+          faction: 'Neutral'
+        };
+      }
+
+      isPointInWater(x, y) {
+        return this.waterZones.some(
+          (w) => x >= w.x && x <= w.x + w.width && y >= w.y && y <= w.y + w.height
+        );
+      }
+
+      getAllSolidObstacles() {
+        return [...this.obstacles, ...this.playerStructures.filter((s) => s.hp > 0)];
+      }
+
+      // Kreis-gegen-AABB Kollisionsauflösung
+      resolveCircleCollisions(entity) {
+        // Weltgrenzen
+        entity.x = Math.max(entity.radius, Math.min(this.width - entity.radius, entity.x));
+        entity.y = Math.max(entity.radius, Math.min(this.height - entity.radius, entity.y));
+
+        const solids = this.getAllSolidObstacles();
+        for (const rect of solids) {
+          const closestX = Math.max(rect.x, Math.min(entity.x, rect.x + rect.width));
+          const closestY = Math.max(rect.y, Math.min(entity.y, rect.y + rect.height));
+          const dx = entity.x - closestX;
+          const dy = entity.y - closestY;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq < entity.radius * entity.radius) {
+            const dist = Math.sqrt(distSq) || 0.001;
+            const overlap = entity.radius - dist;
+            const nx = dx / dist;
+            const ny = dy / dist;
+
+            // Falls Zentrum exakt im Rechteck liegt, nach nächster Kante schieben
+            if (distSq === 0) {
+              const leftPen = Math.abs(entity.x - rect.x);
+              const rightPen = Math.abs(rect.x + rect.width - entity.x);
+              const topPen = Math.abs(entity.y - rect.y);
+              const botPen = Math.abs(rect.y + rect.height - entity.y);
+              const minPen = Math.min(leftPen, rightPen, topPen, botPen);
+              if (minPen === leftPen) entity.x = rect.x - entity.radius;
+              else if (minPen === rightPen) entity.x = rect.x + rect.width + entity.radius;
+              else if (minPen === topPen) entity.y = rect.y - entity.radius;
+              else entity.y = rect.y + rect.height + entity.radius;
+            } else {
+              entity.x += nx * overlap;
+              entity.y += ny * overlap;
+            }
+          }
+        }
+      }
+
+      // Prüft, ob ein Punkt (z. B. Projektil) von einem Hindernis blockiert wird
+      isSegmentBlockedBySolid(x1, y1, x2, y2) {
+        const steps = 12;
+        const solids = this.getAllSolidObstacles();
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const px = x1 + (x2 - x1) * t;
+          const py = y1 + (y2 - y1) * t;
+          for (const rect of solids) {
+            if (px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height) {
+              return { hit: true, x: px, y: py, rect };
+            }
+          }
+        }
+        return { hit: false };
+      }
+
+      draw(ctx, camera, timeSec) {
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        // Grundboden der Insel
+        ctx.fillStyle = '#13221a';
+        ctx.fillRect(0, 0, this.width, this.height);
+
+        // Subtiles Koordinatenraster
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+        ctx.lineWidth = 1;
+        const gridStep = 100;
+        const startX = Math.floor(camera.x / gridStep) * gridStep;
+        const endX = Math.min(this.width, camera.x + camera.viewWidth + gridStep);
+        const startY = Math.floor(camera.y / gridStep) * gridStep;
+        const endY = Math.min(this.height, camera.y + camera.viewHeight + gridStep);
+
+        for (let x = startX; x <= endX; x += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(x, startY);
+          ctx.lineTo(x, endY);
+          ctx.stroke();
+        }
+        for (let y = startY; y <= endY; y += gridStep) {
+          ctx.beginPath();
+          ctx.moveTo(startX, y);
+          ctx.lineTo(endX, y);
+          ctx.stroke();
+        }
+
+        // Wasserflächen mit animierten Wellenlinien
+        for (const w of this.waterZones) {
+          ctx.fillStyle = 'rgba(14, 116, 144, 0.52)';
+          ctx.fillRect(w.x, w.y, w.width, w.height);
+
+          ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(w.x, w.y, w.width, w.height);
+
+          // Animierte Wellen
+          ctx.strokeStyle = 'rgba(186, 230, 253, 0.22)';
+          ctx.lineWidth = 1.5;
+          const waveOffset = Math.sin(timeSec * 2.5) * 10;
+          for (let wy = w.y + 36; wy < w.y + w.height - 20; wy += 48) {
+            ctx.beginPath();
+            ctx.moveTo(w.x + 24 + waveOffset, wy);
+            ctx.lineTo(w.x + w.width - 24 + waveOffset, wy);
+            ctx.stroke();
+          }
+        }
+
+        // POI-Zonen (Kreisbereiche & Beschriftung)
+        for (const poi of this.pois) {
+          ctx.fillStyle = `${poi.floorColor}aa`;
+          ctx.beginPath();
+          ctx.arc(poi.x, poi.y, poi.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = `${poi.accentColor}55`;
+          ctx.lineWidth = 3;
+          ctx.setLineDash([12, 8]);
+          ctx.beginPath();
+          ctx.arc(poi.x, poi.y, poi.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // POI-Label auf der Karte
+          ctx.fillStyle = 'rgba(248, 250, 252, 0.65)';
+          ctx.font = '800 22px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(poi.name.toUpperCase(), poi.x, poi.y - poi.radius + 32);
+
+          ctx.fillStyle = poi.accentColor;
+          ctx.font = '700 12px Inter, sans-serif';
+          ctx.fillText(`FRAKTION: ${poi.faction.toUpperCase()}`, poi.x, poi.y - poi.radius + 50);
+        }
+
+        // Tarn-/Versteckobjekte (Telefonzellen & Mülltonnen)
+        for (const spot of this.hidingSpots) {
+          ctx.fillStyle = spot.color;
+          ctx.strokeStyle = '#f8fafc';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(spot.x, spot.y, spot.width, spot.height, 7);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '800 11px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(spot.kind === 'Telefonzelle' ? 'TEL' : 'TON', spot.x + spot.width / 2, spot.y + spot.height / 2 + 4);
+        }
+
+        // Beutekisten / Loot-Spawns
+        for (const chest of this.lootChests) {
+          if (chest.opened) {
+            ctx.fillStyle = 'rgba(71, 85, 105, 0.45)';
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(chest.x - chest.size / 2, chest.y - chest.size / 2, chest.size, chest.size, 6);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            const pulse = 1 + Math.sin(timeSec * 5) * 0.06;
+            const boxColor = chest.tier === 'mythic' ? '#f59e0b' : chest.tier === 'rare' ? '#38bdf8' : '#a3e635';
+            ctx.save();
+            ctx.translate(chest.x, chest.y);
+            ctx.scale(pulse, pulse);
+            ctx.fillStyle = boxColor;
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(-chest.size / 2, -chest.size / 2, chest.size, chest.size, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#090d16';
+            ctx.font = '900 11px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('LOOT', 0, 4);
+            ctx.restore();
+          }
+        }
+
+        // Feste Hindernisse
+        for (const obs of this.obstacles) {
+          ctx.fillStyle = obs.color;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(obs.x, obs.y, obs.width, obs.height, 6);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        // Spieler-Deckungen (bauen mit [B])
+        for (const b of this.playerStructures) {
+          if (b.hp <= 0) continue;
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(b.x, b.y, b.width, b.height, 5);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        // Weltgrenze
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, this.width, this.height);
+
+        ctx.restore();
+      }
+    }
+
+    /**
+     * MODUL 4: PARTIKEL- & EFFEKT-SYSTEM
+     */
+    class ParticleSystem {
+      constructor() {
+        this.particles = [];
+      }
+
+      spawnBurst(x, y, color, count = 10, speedMin = 50, speedMax = 220, life = 0.35) {
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = speedMin + Math.random() * (speedMax - speedMin);
+          this.particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: 2.5 + Math.random() * 3.5,
+            color,
+            life,
+            maxLife: life
+          });
+        }
+      }
+
+      update(dt) {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.92;
+          p.vy *= 0.92;
+          p.life -= dt;
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+          }
+        }
+      }
+
+      draw(ctx, camera) {
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+        for (const p of this.particles) {
+          const alpha = Math.max(0, p.life / p.maxLife);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    /**
+     * MODUL 5: SPIELER- & NPC-WACHEN-KLASSEN (Schatten vs. Geist)
+     */
+    class Player {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 18;
+        this.speed = 250;
+        this.angle = 0;
+
+        this.hp = 100;
+        this.maxHp = 100;
+        this.shield = 50;
+        this.maxShield = 100;
+
+        this.materials = 120;
+        this.shieldPotions = 2;
+
+        // Tarnzustand (in Telefonzelle oder Mülltonne)
+        this.isHidden = false;
+        this.hidingSpotId = null;
+        this.inWater = false;
+
+        // Waffen-Inventar (Slots 1-5)
+        this.weapons = [
+          new WeaponInstance(WEAPON_CATALOG.assault_rifle),
+          new WeaponInstance(WEAPON_CATALOG.shotgun),
+          new WeaponInstance(WEAPON_CATALOG.smg),
+          new WeaponInstance(WEAPON_CATALOG.sniper),
+          new WeaponInstance(WEAPON_CATALOG.mythic_drum)
+        ];
+        this.activeWeaponIndex = 0;
+      }
+
+      get currentWeapon() {
+        return this.weapons[this.activeWeaponIndex];
+      }
+
+      selectWeapon(index) {
+        if (index >= 0 && index < this.weapons.length) {
+          this.activeWeaponIndex = index;
+          return true;
+        }
+        return false;
+      }
+
+      useShieldPotion() {
+        if (this.shieldPotions <= 0 || this.shield >= this.maxShield) {
+          return false;
+        }
+        this.shieldPotions -= 1;
+        this.shield = Math.min(this.maxShield, this.shield + 50);
+        return true;
+      }
+
+      takeDamage(amount) {
+        let remaining = amount;
+        if (this.shield > 0) {
+          const absorbed = Math.min(this.shield, remaining);
+          this.shield -= absorbed;
+          remaining -= absorbed;
+        }
+        if (remaining > 0) {
+          this.hp = Math.max(0, this.hp - remaining);
+        }
+      }
+
+      update(dt, input, world) {
+        this.currentWeapon.update(dt);
+        this.inWater = world.isPointInWater(this.x, this.y);
+
+        // Falls versteckt, nicht frei bewegen (Verlassen mit Taste E)
+        if (!this.isHidden) {
+          let moveX = 0;
+          let moveY = 0;
+          if (input.keys['KeyW'] || input.keys['ArrowUp']) moveY -= 1;
+          if (input.keys['KeyS'] || input.keys['ArrowDown']) moveY += 1;
+          if (input.keys['KeyA'] || input.keys['ArrowLeft']) moveX -= 1;
+          if (input.keys['KeyD'] || input.keys['ArrowRight']) moveX += 1;
+
+          if (moveX !== 0 || moveY !== 0) {
+            const len = Math.hypot(moveX, moveY);
+            moveX /= len;
+            moveY /= len;
+
+            const speedMultiplier = this.inWater ? 0.58 : 1.0;
+            this.x += moveX * this.speed * speedMultiplier * dt;
+            this.y += moveY * this.speed * speedMultiplier * dt;
+            world.resolveCircleCollisions(this);
+          }
+        }
+      }
+
+      draw(ctx, camera, cosmetics) {
+        if (this.isHidden) return; // Im Versteck unsichtbar auf dem Spielfeld
+
+        const outfit = cosmetics.getEquippedOutfit();
+        const backbling = cosmetics.getEquippedBackbling();
+
+        ctx.save();
+        ctx.translate(this.x - camera.x, this.y - camera.y);
+        ctx.rotate(this.angle);
+
+        // Wasser-Ring, wenn Spieler schwimmt
+        if (this.inWater) {
+          ctx.strokeStyle = 'rgba(125, 211, 252, 0.75)';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius + 6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Rücken-Accessoire (links/hinten in Blickrichtung)
+        if (backbling && backbling.shape !== 'none') {
+          ctx.fillStyle = backbling.color;
+          ctx.beginPath();
+          ctx.roundRect(-this.radius - 7, -8, 9, 16, 3);
+          ctx.fill();
+        }
+
+        // Waffe vorne
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(6, 4, 20, 6);
+
+        // Körper / Outfit
+        ctx.fillStyle = outfit.primaryColor;
+        ctx.strokeStyle = outfit.accentColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Visier nach vorne (+X)
+        ctx.fillStyle = outfit.visorColor;
+        ctx.beginPath();
+        ctx.roundRect(4, -8, 9, 16, 4);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    class GuardNPC {
+      constructor(id, x, y, faction = 'Schatten') {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.spawnX = x;
+        this.spawnY = y;
+        this.radius = 17;
+        this.faction = faction; // 'Schatten' oder 'Geist'
+        this.hp = 85;
+        this.maxHp = 85;
+        this.speed = 135;
+        this.angle = Math.random() * Math.PI * 2;
+        this.patrolTarget = {
+          x: x + (Math.random() - 0.5) * 220,
+          y: y + (Math.random() - 0.5) * 220
+        };
+        this.state = 'patrol'; // 'patrol' | 'alert'
+        this.fireCooldown = 0.6 + Math.random() * 0.7;
+        this.visionRange = 430;
+      }
+
+      get themeColor() {
+        return this.faction === 'Schatten' ? '#e11d48' : '#0284c7';
+      }
+
+      get bodyColor() {
+        return this.faction === 'Schatten' ? '#18181b' : '#e2e8f0';
+      }
+
+      update(dt, player, world, alarmLevel, onEnemyShoot, onAlertIncrease) {
+        if (this.hp <= 0) return;
+        this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.hypot(dx, dy);
+
+        // Spieler ist nur erkennbar, wenn nicht versteckt und in Sichtweite/Alarmbereich
+        const effectiveRange = this.visionRange + alarmLevel * 1.6;
+        const canSeePlayer =
+          !player.isHidden &&
+          dist <= effectiveRange &&
+          !world.isSegmentBlockedBySolid(this.x, this.y, player.x, player.y).hit;
+
+        if (canSeePlayer) {
+          this.state = 'alert';
+          this.angle = Math.atan2(dy, dx);
+          onAlertIncrease(18 * dt);
+
+          // Auf optimaler Kampfabstand bewegen
+          if (dist > 220) {
+            const moveSpd = world.isPointInWater(this.x, this.y) ? this.speed * 0.6 : this.speed;
+            this.x += Math.cos(this.angle) * moveSpd * dt;
+            this.y += Math.sin(this.angle) * moveSpd * dt;
+            world.resolveCircleCollisions(this);
+          }
+
+          if (this.fireCooldown <= 0) {
+            this.fireCooldown = 0.85 + Math.random() * 0.45;
+            onEnemyShoot(this, this.angle);
+          }
+        } else {
+          this.state = 'patrol';
+          const pdx = this.patrolTarget.x - this.x;
+          const pdy = this.patrolTarget.y - this.y;
+          const pdist = Math.hypot(pdx, pdy);
+
+          if (pdist < 16) {
+            this.patrolTarget = {
+              x: this.spawnX + (Math.random() - 0.5) * 260,
+              y: this.spawnY + (Math.random() - 0.5) * 260
+            };
+          } else {
+            this.angle = Math.atan2(pdy, pdx);
+            this.x += Math.cos(this.angle) * this.speed * 0.65 * dt;
+            this.y += Math.sin(this.angle) * this.speed * 0.65 * dt;
+            world.resolveCircleCollisions(this);
+          }
+        }
+      }
+
+      draw(ctx, camera) {
+        if (this.hp <= 0) return;
+
+        ctx.save();
+        ctx.translate(this.x - camera.x, this.y - camera.y);
+        ctx.rotate(this.angle);
+
+        // Waffe
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(6, 4, 18, 5);
+
+        // Körper
+        ctx.fillStyle = this.bodyColor;
+        ctx.strokeStyle = this.themeColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Visier
+        ctx.fillStyle = this.themeColor;
+        ctx.beginPath();
+        ctx.roundRect(4, -7, 8, 14, 3);
+        ctx.fill();
+
+        ctx.restore();
+
+        // Lebensbalken über der Wache
+        const barW = 36;
+        const barH = 5;
+        const bx = this.x - camera.x - barW / 2;
+        const by = this.y - camera.y - this.radius - 14;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillRect(bx, by, barW, barH);
+        ctx.fillStyle = this.themeColor;
+        ctx.fillRect(bx, by, barW * Math.max(0, this.hp / this.maxHp), barH);
+      }
+    }
+
+    /**
+     * MODUL 6: HAUPT-GAME-ENGINE & UI-KOORDINATION
+     */
+    class GameEngine {
+      constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+
+        this.lockerCanvas = document.getElementById('lockerPreviewCanvas');
+        this.lockerCtx = this.lockerCanvas.getContext('2d');
+
+        this.shopCanvas = document.getElementById('shopPreviewCanvas');
+        this.shopCtx = this.shopCanvas.getContext('2d');
+
+        this.world = new WorldMap(2600, 2000);
+        this.particles = new ParticleSystem();
+        this.cosmetics = new CosmeticManager();
+
+        this.camera = { x: 0, y: 0, viewWidth: window.innerWidth, viewHeight: window.innerHeight };
+        this.input = { keys: {}, mouseScreenX: 0, mouseScreenY: 0, mouseDown: false };
+
+        this.paused = false;
+        this.gameOver = false;
+        this.alarmLevel = 0; // 0 bis 100
+        this.timeSec = 0;
+        this.lastFrameTime = performance.now();
+        this.toastTimeout = null;
+
+        this.projectiles = [];
+        this.guards = [];
+
+        this.resizeCanvas();
+        this.resetGame(false);
+        this.bindEvents();
+        this.renderLockerUI();
+        this.renderShopUI();
+      }
+
+      resetGame(showNotice = true) {
+        this.player = new Player(1300, 1000);
+        this.world.playerStructures = [];
+        this.world.resetLootChests();
+        this.projectiles = [];
+        this.particles.particles = [];
+        this.alarmLevel = 0;
+        this.gameOver = false;
+        this.paused = false;
+
+        this.spawnGuards();
+        this.hideOverlay();
+        this.updateHud();
+
+        if (showNotice) {
+          this.showToast('Neuer Einsatz gestartet — Viel Erfolg!');
+        }
+      }
+
+      spawnGuards() {
+        const specs = [
+          { x: 1200, y: 920, faction: 'Geist' },
+          { x: 1410, y: 1080, faction: 'Geist' },
+          { x: 520, y: 460, faction: 'Schatten' },
+          { x: 640, y: 420, faction: 'Schatten' },
+          { x: 480, y: 1520, faction: 'Schatten' },
+          { x: 600, y: 1560, faction: 'Schatten' },
+          { x: 2040, y: 500, faction: 'Geist' },
+          { x: 2130, y: 560, faction: 'Geist' },
+          { x: 2020, y: 1510, faction: 'Schatten' },
+          { x: 2120, y: 1540, faction: 'Schatten' }
+        ];
+        this.guards = specs.map((s, idx) => new GuardNPC(`guard_${idx}`, s.x, s.y, s.faction));
+      }
+
+      resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        this.camera.viewWidth = window.innerWidth;
+        this.camera.viewHeight = window.innerHeight;
+        this.canvas.width = Math.floor(this.camera.viewWidth * dpr);
+        this.canvas.height = Math.floor(this.camera.viewHeight * dpr);
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      showToast(message) {
+        const banner = document.getElementById('toastBanner');
+        banner.textContent = message;
+        banner.classList.remove('hidden');
+        clearTimeout(this.toastTimeout);
+        this.toastTimeout = setTimeout(() => {
+          banner.classList.add('hidden');
+        }, 2600);
+      }
+
+      showOverlay(badge, title, message, isGameOver = false) {
+        document.getElementById('overlayBadge').textContent = badge;
+        document.getElementById('overlayTitle').textContent = title;
+        document.getElementById('overlayMessage').textContent = message;
+        document.getElementById('btnResumeGame').classList.toggle('hidden', isGameOver);
+        document.getElementById('statusOverlay').classList.remove('hidden');
+        document.getElementById('statusOverlay').classList.add('flex');
+      }
+
+      hideOverlay() {
+        document.getElementById('statusOverlay').classList.add('hidden');
+        document.getElementById('statusOverlay').classList.remove('flex');
+      }
+
+      openModal(modalId) {
+        this.paused = true;
+        const el = document.getElementById(modalId);
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+        this.renderLockerUI();
+        this.renderShopUI();
+      }
+
+      closeModal(modalId) {
+        const el = document.getElementById(modalId);
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+        if (!this.gameOver) {
+          this.paused = false;
+          this.lastFrameTime = performance.now();
+        }
+      }
+
+      // Interaktion mit Telefonzelle / Mülltonne oder Beutekiste (Taste E)
+      handleInteract() {
+        if (this.paused || this.gameOver) return;
+
+        // Falls bereits versteckt -> Versteck verlassen
+        if (this.player.isHidden) {
+          this.player.isHidden = false;
+          this.player.hidingSpotId = null;
+          this.showToast('Versteck verlassen — Tarnung beendet.');
+          this.updateHud();
+          return;
+        }
+
+        // Nächste Beutekiste prüfen
+        for (const chest of this.world.lootChests) {
+          if (!chest.opened && Math.hypot(this.player.x - chest.x, this.player.y - chest.y) <= 58) {
+            chest.opened = true;
+            this.player.materials += 35;
+            this.player.shieldPotions += 1;
+            this.cosmetics.credits += 75;
+            this.player.currentWeapon.addAmmo(45);
+
+            if (chest.tier === 'mythic') {
+              this.player.selectWeapon(4); // Mythisches Trommelgewehr
+              this.showToast('MYTHISCHE KISTE! +35 Mat, +1 Schild, +75 Intel & Trommelgewehr!');
+            } else {
+              this.showToast('Kiste geöffnet! +35 Material, +1 Schild-Trank, +75 Intel-Marken.');
+            }
+            this.particles.spawnBurst(chest.x, chest.y, '#fbbf24', 14);
+            this.updateHud();
+            this.renderShopUI();
+            return;
+          }
+        }
+
+        // Nächstes Tarnobjekt (Telefonzelle / Mülltonne) prüfen
+        for (const spot of this.world.hidingSpots) {
+          const cx = spot.x + spot.width / 2;
+          const cy = spot.y + spot.height / 2;
+          if (Math.hypot(this.player.x - cx, this.player.y - cy) <= 56) {
+            this.player.isHidden = true;
+            this.player.hidingSpotId = spot.id;
+            this.player.x = cx;
+            this.player.y = cy;
+            this.showToast(`In ${spot.kind} versteckt! Wachen verlieren Sichtkontakt.`);
+            this.updateHud();
+            return;
+          }
+        }
+
+        this.showToast('Nichts Interaktives in Reichweite.');
+      }
+
+      // Deckung aufbauen (Taste B)
+      handleBuildCover() {
+        if (this.paused || this.gameOver) return;
+        const cost = 20;
+        if (this.player.materials < cost) {
+          this.showToast('Nicht genug Material für Deckung (20 benötigt).');
+          return;
+        }
+        const distAhead = 42;
+        const bx = this.player.x + Math.cos(this.player.angle) * distAhead - 36;
+        const by = this.player.y + Math.sin(this.player.angle) * distAhead - 12;
+
+        this.world.playerStructures.push({
+          x: bx,
+          y: by,
+          width: 72,
+          height: 24,
+          hp: 140
+        });
+        this.player.materials -= cost;
+        this.particles.spawnBurst(bx + 36, by + 12, '#f59e0b', 10);
+        this.showToast('Taktische Deckung errichtet (-20 Material).');
+        this.updateHud();
+      }
+
+      // Schild aufladen (Taste H)
+      handleHealShield() {
+        if (this.paused || this.gameOver) return;
+        if (this.player.useShieldPotion()) {
+          this.particles.spawnBurst(this.player.x, this.player.y, '#38bdf8', 14);
+          this.showToast('Schild aufgeladen (+50 Schild).');
+          this.updateHud();
+        } else {
+          this.showToast('Kein Schild-Trank verfügbar oder Schild bereits voll.');
+        }
+      }
+
+      // Spieler-Schuss auslösen
+      tryPlayerShoot() {
+        if (this.paused || this.gameOver) return;
+        if (this.player.isHidden) {
+          // Schießen beendet Tarnung
+          this.player.isHidden = false;
+          this.player.hidingSpotId = null;
+        }
+
+        const wpn = this.player.currentWeapon;
+        if (!wpn.canFire) {
+          if (wpn.mag === 0 && !wpn.isReloading) {
+            wpn.startReload();
+          }
+          return;
+        }
+
+        wpn.mag -= 1;
+        wpn.cooldown = wpn.config.fireRate;
+
+        // Schüsse erhöhen Sicherheits-Alarm leicht
+        this.alarmLevel = Math.min(100, this.alarmLevel + 4.5);
+
+        const muzzleX = this.player.x + Math.cos(this.player.angle) * 24;
+        const muzzleY = this.player.y + Math.sin(this.player.angle) * 24;
+        this.particles.spawnBurst(muzzleX, muzzleY, wpn.config.color, 5, 40, 140, 0.14);
+
+        for (let i = 0; i < wpn.config.pellets; i++) {
+          const spreadOffset = (Math.random() - 0.5) * wpn.config.spread;
+          const shotAngle = this.player.angle + spreadOffset;
+          this.projectiles.push({
+            owner: 'player',
+            x: muzzleX,
+            y: muzzleY,
+            vx: Math.cos(shotAngle) * wpn.config.bulletSpeed,
+            vy: Math.sin(shotAngle) * wpn.config.bulletSpeed,
+            damage: wpn.config.damage,
+            color: wpn.config.color,
+            traveled: 0,
+            maxRange: wpn.config.range
+          });
+        }
+
+        if (wpn.mag === 0) {
+          wpn.startReload();
+        }
+      }
+
+      // NPC-Wache schießt auf Spieler
+      spawnGuardProjectile(guard, angle) {
+        const startX = guard.x + Math.cos(angle) * 20;
+        const startY = guard.y + Math.sin(angle) * 20;
+        const jitter = (Math.random() - 0.5) * 0.14;
+        const finalAngle = angle + jitter;
+        const speed = 560;
+
+        this.projectiles.push({
+          owner: 'enemy',
+          faction: guard.faction,
+          x: startX,
+          y: startY,
+          vx: Math.cos(finalAngle) * speed,
+          vy: Math.sin(finalAngle) * speed,
+          damage: 9,
+          color: guard.themeColor,
+          traveled: 0,
+          maxRange: 620
+        });
+      }
+
+      updateProjectiles(dt) {
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+          const p = this.projectiles[i];
+          const stepX = p.vx * dt;
+          const stepY = p.vy * dt;
+          const stepDist = Math.hypot(stepX, stepY);
+
+          const nextX = p.x + stepX;
+          const nextY = p.y + stepY;
+
+          // Hindernis-Treffer prüfen (inkl. Spieler-Deckungen)
+          const block = this.world.isSegmentBlockedBySolid(p.x, p.y, nextX, nextY);
+          if (block.hit) {
+            if (block.rect && typeof block.rect.hp === 'number') {
+              block.rect.hp -= p.damage;
+            }
+            this.particles.spawnBurst(block.x, block.y, p.color, 6, 30, 120, 0.2);
+            this.projectiles.splice(i, 1);
+            continue;
+          }
+
+          p.x = nextX;
+          p.y = nextY;
+          p.traveled += stepDist;
+
+          let hitSomething = false;
+
+          if (p.owner === 'player') {
+            for (const g of this.guards) {
+              if (g.hp <= 0) continue;
+              if (Math.hypot(p.x - g.x, p.y - g.y) <= g.radius + 5) {
+                g.hp -= p.damage;
+                g.state = 'alert';
+                this.alarmLevel = Math.min(100, this.alarmLevel + 10);
+                this.particles.spawnBurst(p.x, p.y, g.themeColor, 8, 50, 180, 0.25);
+
+                if (g.hp <= 0) {
+                  this.cosmetics.credits += 100;
+                  this.player.materials += 25;
+                  this.particles.spawnBurst(g.x, g.y, g.themeColor, 20, 70, 260, 0.45);
+                  this.showToast(`${g.faction}-Wache ausgeschaltet! +100 Intel & +25 Mat.`);
+                  this.renderShopUI();
+                }
+                hitSomething = true;
+                break;
+              }
+            }
+          } else if (p.owner === 'enemy' && !this.player.isHidden) {
+            if (Math.hypot(p.x - this.player.x, p.y - this.player.y) <= this.player.radius + 4) {
+              this.player.takeDamage(p.damage);
+              this.particles.spawnBurst(p.x, p.y, '#ef4444', 8, 50, 170, 0.25);
+              hitSomething = true;
+
+              if (this.player.hp <= 0) {
+                this.gameOver = true;
+                this.showOverlay(
+                  'Einsatz fehlgeschlagen',
+                  'Agent ausgeschaltet',
+                  'Du wurdest von den Wachkräften überwältigt. Starte eine neue Runde oder prüfe deinen Spind.',
+                  true
+                );
+              }
+            }
+          }
+
+          if (hitSomething || p.traveled >= p.maxRange) {
+            this.projectiles.splice(i, 1);
+          }
+        }
+      }
+
+      update(dt) {
+        this.timeSec += dt;
+
+        // Kosmetik-Vorschau rotiert auch im Modal sanft weiter
+        if (this.cosmetics.spinEnabled) {
+          this.cosmetics.previewAngle += dt * 1.4;
+        }
+
+        if (this.paused || this.gameOver) {
+          this.drawPreviewCanvases();
+          return;
+        }
+
+        // Alarmlevel baut sich langsam ab, wenn kein Kontakt besteht
+        this.alarmLevel = Math.max(0, this.alarmLevel - dt * 2.4);
+
+        this.player.update(dt, this.input, this.world);
+
+        // Blickwinkel des Spielers zur Maus im Weltkoordinatensystem berechnen
+        const worldMouseX = this.input.mouseScreenX + this.camera.x;
+        const worldMouseY = this.input.mouseScreenY + this.camera.y;
+        this.player.angle = Math.atan2(worldMouseY - this.player.y, worldMouseX - this.player.x);
+
+        if (this.input.mouseDown) {
+          this.tryPlayerShoot();
+        }
+
+        // NPC-Wachen aktualisieren
+        for (const g of this.guards) {
+          g.update(
+            dt,
+            this.player,
+            this.world,
+            this.alarmLevel,
+            (guard, angle) => this.spawnGuardProjectile(guard, angle),
+            (deltaAlarm) => {
+              this.alarmLevel = Math.min(100, this.alarmLevel + deltaAlarm);
+            }
+          );
+        }
+
+        this.updateProjectiles(dt);
+        this.particles.update(dt);
+
+        // Kamera weich auf den Spieler zentrieren
+        const targetCamX = this.player.x - this.camera.viewWidth / 2;
+        const targetCamY = this.player.y - this.camera.viewHeight / 2;
+        this.camera.x += (targetCamX - this.camera.x) * Math.min(1, dt * 8);
+        this.camera.y += (targetCamY - this.camera.y) * Math.min(1, dt * 8);
+        this.camera.x = Math.max(0, Math.min(this.world.width - this.camera.viewWidth, this.camera.x));
+        this.camera.y = Math.max(0, Math.min(this.world.height - this.camera.viewHeight, this.camera.y));
+
+        this.updateHud();
+      }
+
+      render() {
+        this.ctx.clearRect(0, 0, this.camera.viewWidth, this.camera.viewHeight);
+
+        this.world.draw(this.ctx, this.camera, this.timeSec);
+
+        // Projektile zeichnen
+        this.ctx.save();
+        this.ctx.translate(-this.camera.x, -this.camera.y);
+        for (const p of this.projectiles) {
+          this.ctx.strokeStyle = p.color;
+          this.ctx.lineWidth = 3.5;
+          this.ctx.beginPath();
+          this.ctx.moveTo(p.x, p.y);
+          this.ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025);
+          this.ctx.stroke();
+        }
+        this.ctx.restore();
+
+        for (const g of this.guards) {
+          g.draw(this.ctx, this.camera);
+        }
+
+        this.player.draw(this.ctx, this.camera, this.cosmetics);
+        this.particles.draw(this.ctx, this.camera);
+      }
+
+      drawPreviewCanvases() {
+        if (!document.getElementById('lockerModal').classList.contains('hidden')) {
+          this.cosmetics.drawCosmeticPreview(
+            this.lockerCtx,
+            this.lockerCanvas.width,
+            this.lockerCanvas.height,
+            this.cosmetics.getEquippedOutfit(),
+            this.cosmetics.previewAngle
+          );
+        }
+        if (!document.getElementById('shopModal').classList.contains('hidden')) {
+          this.cosmetics.drawCosmeticPreview(
+            this.shopCtx,
+            this.shopCanvas.width,
+            this.shopCanvas.height,
+            this.cosmetics.previewItem,
+            this.cosmetics.previewAngle
+          );
+        }
+      }
+
+      updateHud() {
+        const poi = this.world.getPoiAt(this.player.x, this.player.y);
+        document.getElementById('hudZoneName').textContent = poi.name;
+        document.getElementById('hudZoneSub').textContent = poi.subtitle;
+        document.getElementById('zoneDot').style.backgroundColor = poi.accentColor;
+
+        document.getElementById('hudStealthBadge').classList.toggle('hidden', !this.player.isHidden);
+        document.getElementById('hudWaterBadge').classList.toggle('hidden', !this.player.inWater);
+
+        const alarmRounded = Math.round(this.alarmLevel);
+        document.getElementById('hudAlarmPercent').textContent = `${alarmRounded}%`;
+        document.getElementById('hudAlarmBar').style.width = `${alarmRounded}%`;
+
+        const aliveGuards = this.guards.filter((g) => g.hp > 0).length;
+        document.getElementById('hudEnemiesLeft').textContent = `Wachen: ${aliveGuards}`;
+
+        document.getElementById('hudShieldText').textContent = `${Math.round(this.player.shield)} / ${this.player.maxShield}`;
+        document.getElementById('hudShieldBar').style.width = `${(this.player.shield / this.player.maxShield) * 100}%`;
+
+        document.getElementById('hudHpText').textContent = `${Math.round(this.player.hp)} / ${this.player.maxHp}`;
+        document.getElementById('hudHpBar').style.width = `${(this.player.hp / this.player.maxHp) * 100}%`;
+
+        document.getElementById('hudMats').textContent = this.player.materials;
+        document.getElementById('hudPotions').textContent = this.player.shieldPotions;
+
+        const wpn = this.player.currentWeapon;
+        document.getElementById('hudWeaponName').textContent = wpn.config.name;
+        document.getElementById('hudAmmoMag').textContent = wpn.mag;
+        document.getElementById('hudAmmoReserve').textContent = wpn.reserve;
+        document.getElementById('hudReloadStatus').classList.toggle('hidden', !wpn.isReloading);
+
+        // Waffen-Slots rendern
+        const slotsEl = document.getElementById('weaponSlotsContainer');
+        slotsEl.innerHTML = '';
+        this.player.weapons.forEach((inst, idx) => {
+          const active = idx === this.player.activeWeaponIndex;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `flex flex-col items-center rounded-xl border px-2.5 py-1.5 text-left transition ${
+            active
+              ? 'border-amber-400 bg-slate-800 shadow-md scale-105'
+              : 'border-slate-700/70 bg-slate-900/70 opacity-75 hover:opacity-100'
+          }`;
+          btn.innerHTML = `
+            <span class="text-[10px] font-black" style="color:${inst.config.color}">[${idx + 1}] ${inst.config.shortName}</span>
+            <span class="text-[11px] font-bold text-white">${inst.mag}</span>
+          `;
+          btn.addEventListener('click', () => {
+            this.player.selectWeapon(idx);
+            this.updateHud();
+          });
+          slotsEl.appendChild(btn);
+        });
+      }
+
+      renderLockerUI() {
+        const makeOptionCard = (item, isEquipped) => {
+          const div = document.createElement('div');
+          div.className = `flex items-center justify-between gap-2 rounded-xl border p-2.5 text-xs ${
+            isEquipped
+              ? 'border-emerald-400 bg-emerald-950/35'
+              : item.owned
+              ? 'border-slate-700 bg-slate-800/70'
+              : 'border-slate-800 bg-slate-950/60 opacity-65'
+          }`;
+          div.innerHTML = `
+            <div>
+              <div class="font-bold text-white">${item.name}</div>
+              <div class="text-[11px] text-slate-400">${item.rarity}${item.faction ? ` • ${item.faction}` : ''}</div>
+            </div>
+            <button type="button" class="rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${
+              isEquipped
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                : item.owned
+                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                : 'bg-slate-800 text-slate-400 cursor-not-allowed'
+            }" ${!item.owned ? 'disabled' : ''}>
+              ${isEquipped ? 'Aktiv' : item.owned ? 'Ausrüsten' : 'Im Shop'}
+            </button>
+          `;
+          const btn = div.querySelector('button');
+          if (item.owned && !isEquipped) {
+            btn.addEventListener('click', () => {
+              this.cosmetics.equipItem(item.id);
+              this.renderLockerUI();
+              this.drawPreviewCanvases();
+            });
+          }
+          return div;
+        };
+
+        const outfitsGrid = document.getElementById('lockerOutfitsGrid');
+        outfitsGrid.innerHTML = '';
+        COSMETIC_CATALOG.outfits.forEach((o) =>
+          outfitsGrid.appendChild(makeOptionCard(o, this.cosmetics.equipped.outfitId === o.id))
+        );
+
+        const bbGrid = document.getElementById('lockerBackblingsGrid');
+        bbGrid.innerHTML = '';
+        COSMETIC_CATALOG.backblings.forEach((b) =>
+          bbGrid.appendChild(makeOptionCard(b, this.cosmetics.equipped.backblingId === b.id))
+        );
+
+        const gliderGrid = document.getElementById('lockerGlidersGrid');
+        gliderGrid.innerHTML = '';
+        COSMETIC_CATALOG.gliders.forEach((gl) =>
+          gliderGrid.appendChild(makeOptionCard(gl, this.cosmetics.equipped.gliderId === gl.id))
+        );
+
+        const outfit = this.cosmetics.getEquippedOutfit();
+        const bb = this.cosmetics.getEquippedBackbling();
+        const glider = this.cosmetics.getEquippedGlider();
+        document.getElementById('lockerEquippedSummary').innerHTML = `
+          <div>Outfit: <strong class="text-white">${outfit.name}</strong></div>
+          <div>Rücken: <strong class="text-sky-300">${bb.name}</strong></div>
+          <div>Gleiter: <strong class="text-emerald-300">${glider.name}</strong></div>
+        `;
+      }
+
+      renderShopUI() {
+        document.getElementById('shopCreditsValue').textContent = this.cosmetics.credits;
+        document.getElementById('shopRotationTag').textContent = `Rotation #${this.cosmetics.rotationIndex + 1}`;
+
+        const grid = document.getElementById('shopItemsGrid');
+        grid.innerHTML = '';
+
+        const featured = this.cosmetics.getShopFeaturedList();
+        featured.forEach((item) => {
+          const isSelected = this.cosmetics.previewItem && this.cosmetics.previewItem.id === item.id;
+          const card = document.createElement('div');
+          card.className = `flex flex-col justify-between rounded-2xl border p-3 transition cursor-pointer ${
+            isSelected
+              ? 'border-amber-400 bg-slate-800/90 shadow-lg'
+              : 'border-slate-800 bg-slate-950/75 hover:border-slate-600'
+          }`;
+          card.innerHTML = `
+            <div>
+              <div class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+                <span class="text-amber-400">${item.rarity}</span>
+                <span class="text-slate-400">${item.type === 'outfit' ? 'Outfit' : item.type === 'backbling' ? 'Rücken' : 'Gleiter'}</span>
+              </div>
+              <div class="mt-1 text-sm font-extrabold text-white">${item.name}</div>
+              <p class="mt-1 text-[11px] text-slate-400 line-clamp-2">${item.desc}</p>
+            </div>
+            <div class="mt-3 flex items-center justify-between pt-2 border-t border-slate-800/80">
+              <span class="text-xs font-black text-amber-300">${item.price} Intel</span>
+              <button type="button" class="rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${
+                item.owned
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                  : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+              }">
+                ${item.owned ? 'Besitzt' : 'Kaufen'}
+              </button>
+            </div>
+          `;
+
+          card.addEventListener('click', () => {
+            this.cosmetics.previewItem = item;
+            this.renderShopUI();
+            this.drawPreviewCanvases();
+          });
+
+          const buyBtn = card.querySelector('button');
+          buyBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            this.cosmetics.previewItem = item;
+            const res = this.cosmetics.buyItem(item.id);
+            this.showToast(res.msg);
+            this.renderShopUI();
+            this.renderLockerUI();
+            this.drawPreviewCanvases();
+          });
+
+          grid.appendChild(card);
+        });
+
+        const preview = this.cosmetics.previewItem || featured[0];
+        if (preview) {
+          document.getElementById('shopPreviewTitle').textContent = preview.name;
+          document.getElementById('shopPreviewDesc').textContent = preview.desc;
+        }
+      }
+
+      bindEvents() {
+        window.addEventListener('resize', () => this.resizeCanvas());
+
+        window.addEventListener('keydown', (e) => {
+          this.input.keys[e.code] = true;
+
+          if (e.code === 'Digit1') { this.player.selectWeapon(0); this.updateHud(); }
+          if (e.code === 'Digit2') { this.player.selectWeapon(1); this.updateHud(); }
+          if (e.code === 'Digit3') { this.player.selectWeapon(2); this.updateHud(); }
+          if (e.code === 'Digit4') { this.player.selectWeapon(3); this.updateHud(); }
+          if (e.code === 'Digit5') { this.player.selectWeapon(4); this.updateHud(); }
+
+          if (e.code === 'KeyR') {
+            this.player.currentWeapon.startReload();
+            this.updateHud();
+          }
+          if (e.code === 'KeyE') {
+            this.handleInteract();
+          }
+          if (e.code === 'KeyB') {
+            this.handleBuildCover();
+          }
+          if (e.code === 'KeyH') {
+            this.handleHealShield();
+          }
+          if (e.code === 'Escape') {
+            if (!document.getElementById('lockerModal').classList.contains('hidden')) {
+              this.closeModal('lockerModal');
+            } else if (!document.getElementById('shopModal').classList.contains('hidden')) {
+              this.closeModal('shopModal');
+            } else if (!this.gameOver) {
+              this.togglePause();
+            }
+          }
+        });
+
+        window.addEventListener('keyup', (e) => {
+          this.input.keys[e.code] = false;
+        });
+
+        this.canvas.addEventListener('mousemove', (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          this.input.mouseScreenX = e.clientX - rect.left;
+          this.input.mouseScreenY = e.clientY - rect.top;
+        });
+
+        this.canvas.addEventListener('mousedown', (e) => {
+          if (e.button === 0) {
+            this.input.mouseDown = true;
+            this.tryPlayerShoot();
+          }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+          if (e.button === 0) {
+            this.input.mouseDown = false;
+          }
+        });
+
+        // Mausrad zum Waffenwechsel
+        this.canvas.addEventListener('wheel', (e) => {
+          const dir = e.deltaY > 0 ? 1 : -1;
+          const next = (this.player.activeWeaponIndex + dir + this.player.weapons.length) % this.player.weapons.length;
+          this.player.selectWeapon(next);
+          this.updateHud();
+        }, { passive: true });
+
+        // HUD- & Modal-Buttons
+        document.getElementById('btnHealShield').addEventListener('click', () => this.handleHealShield());
+        document.getElementById('btnBuildCover').addEventListener('click', () => this.handleBuildCover());
+        document.getElementById('btnOpenLocker').addEventListener('click', () => this.openModal('lockerModal'));
+        document.getElementById('btnOpenShop').addEventListener('click', () => this.openModal('shopModal'));
+        document.getElementById('btnTogglePause').addEventListener('click', () => this.togglePause());
+        document.getElementById('btnRestartGame').addEventListener('click', () => this.resetGame(true));
+        document.getElementById('btnResumeGame').addEventListener('click', () => this.togglePause());
+        document.getElementById('btnOverlayRestart').addEventListener('click', () => this.resetGame(true));
+
+        document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+          btn.addEventListener('click', () => this.closeModal(btn.getAttribute('data-close-modal')));
+        });
+
+        document.getElementById('btnRotateShop').addEventListener('click', () => {
+          this.cosmetics.rotateShop();
+          this.renderShopUI();
+          this.drawPreviewCanvases();
+        });
+
+        document.getElementById('btnToggleShopSpin').addEventListener('click', () => {
+          this.cosmetics.spinEnabled = !this.cosmetics.spinEnabled;
+        });
+      }
+
+      togglePause() {
+        if (this.gameOver) return;
+        this.paused = !this.paused;
+        if (this.paused) {
+          this.showOverlay(
+            'Einsatz pausiert',
+            'Spiel pausiert',
+            'Nutze Spind oder Item-Shop, um dein Aussehen anzupassen, oder spiele direkt weiter.',
+            false
+          );
+        } else {
+          this.hideOverlay();
+          this.lastFrameTime = performance.now();
+        }
+      }
+
+      loop(now) {
+        const rawDt = (now - this.lastFrameTime) / 1000;
+        this.lastFrameTime = now;
+        const dt = Math.min(0.05, Math.max(0.001, rawDt)); // Delta-Time begrenzen
+
+        this.update(dt);
+        this.render();
+
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      start() {
+        requestAnimationFrame((t) => this.loop(t));
+      }
+    }
+
+    // Start nach Laden des DOMs
+    window.addEventListener('DOMContentLoaded', () => {
+      const engine = new GameEngine();
+      engine.start();
+    });
+  </script>
+</body>
+</html>
